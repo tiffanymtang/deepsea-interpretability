@@ -1,4 +1,7 @@
+# main script to extract pwms from first convolutional+activation layer
+
 import numpy as np
+import pandas as pd
 import kipoi
 import torch
 import torch.nn as nn
@@ -22,7 +25,6 @@ def get_pwm_model(verbose = False):
     deep_sea = kipoi.get_model("DeepSEA/predict")
     
     # freeze all weights in pre-trained model
-    weights = {}
     for name, param in deep_sea.model.named_parameters():
         param.requires_grad = False
         if verbose:
@@ -38,6 +40,41 @@ def get_pwm_model(verbose = False):
     rc_model = nn.Sequential(*list(deep_sea.model[0:2]))
     
     return pwm_model, rc_model
+
+
+def get_knockout_model(full_model, i, verbose = False):
+    '''
+    Get full DeepSEA model where we knock out one filter in the first convolutional
+    layer by setting it to the mean output
+    
+    Parameters
+    ----------
+    full_model : full deep sea model; kipoi.get_model("DeepSEA/predict").model
+    i : integer; which filter to "knockout"
+    verbose : boolean; level of print statements
+    
+    Returns
+    -------
+    knockout_model : full deepsea model with one layer1 filter knocked out
+    '''
+    
+    # freeze all weights in pre-trained model
+    for name, param in full_model.named_parameters():
+        param.requires_grad = False
+        if verbose:
+            print('name: ', name)
+            print(type(param))
+            print('param.shape: ', param.shape)
+            print('param.requires_grad: ', param.requires_grad)
+            print('=====')
+    
+    mean_layer1_output = torch.load("out/mean_output_layer1.pt")
+    
+    knockout_model = copy.deepcopy(full_model)
+    knockout_model[2][0].bias[i] = nn.Parameter(mean_layer1_output[i])
+    knockout_model[2][0].weight[i, :] = nn.Parameter(torch.zeros_like(full_model[2][0].weight[i, :]))
+    
+    return knockout_model
 
 
 def get_pwm(X, batch_size = 500, thr = 1e-6, keep_all_active = True, direct = False, 
@@ -67,6 +104,11 @@ def get_pwm(X, batch_size = 500, thr = 1e-6, keep_all_active = True, direct = Fa
     if direct:
         print("Getting PWMs directly from trained DeepSEA model...")
         pwms = pwm_model[2][0].weight[:, :, 0, :]
+        # get a,c,t,g ordering of filters
+        x = pwms[:, 1:2, :].clone()
+        y = pwms[:, 2:3, :].clone()
+        pwms[:, 1:2, :] = y
+        pwms[:, 2:3, :] = x
         pfms = None
     else:
         print("Getting PWMs from DeepBind method...")
@@ -78,9 +120,6 @@ def get_pwm(X, batch_size = 500, thr = 1e-6, keep_all_active = True, direct = Fa
         freqs = np.zeros(n_filters)
         
         if parallel:  # run in parallel
-            manager = multiprocessing.Manager()
-            return_dict = manager.dict()
-            jobs = []
             keys = []
             for i in tqdm(range(math.ceil(n_batch / n_cores))):  # run in groups of n_cores
                 manager = multiprocessing.Manager()
@@ -102,6 +141,7 @@ def get_pwm(X, batch_size = 500, thr = 1e-6, keep_all_active = True, direct = Fa
                 freqs = freqs + list(np.stack([return_dict[batch]['freqs'] for batch in return_dict.keys()]).sum(axis = 0))
                 keys.append(return_dict.keys())
                 
+            # some error checking
             keys = list(chain.from_iterable(keys))
             if len(keys) != n_batch:
                 print("Possible missing batches. Saving keys to file...")
@@ -156,6 +196,10 @@ def get_pfm_batch(X_batch, pwm_model, rc_model, thr = 1e-6, keep_all_active = Tr
     if keep_all_active:
         # get all segments that pass threshold (default is 1e-6)
         active_idx = out > thr
+        if thr < 0:  # use adaptive filter-specific threshold (filter_max_value / 2)
+            thrs = torch.load("out/max_output_values.pt").max(axis = 0).values.numpy() / 2
+            for f in range(out.shape[1]):  
+                active_idx[:, f, :, :] = out[:, f, :, :] > thrs[f]
         print("Proportion of non-zeros:", (active_idx * 1.0).mean().item())
         
         for f in range(out.shape[1]):  # for each filter
@@ -168,6 +212,10 @@ def get_pfm_batch(X_batch, pwm_model, rc_model, thr = 1e-6, keep_all_active = Tr
         # get samples that have at least one position that passes threshold
         out_max_value, out_max_pos = out[:, :, 0, :].max(axis = 2)
         active_idx = out_max_value > thr
+        if thr < 0:  # use adaptive filter-specific threshold (filter_max_value / 2)
+            thrs = torch.load("out/max_output_values.pt").max(axis = 0).values.numpy() / 2
+            for f in range(out.shape[1]):  
+                active_idx[:, f] = out_max_value[:, f] > thrs[f]
         out_max_pos[~active_idx] = -1
         print("Proportion of active sequences:", (active_idx * 1.0).mean().item())
         for f in range(out.shape[1]):  # for each filter
@@ -218,6 +266,10 @@ def get_pfm_batch_parallel(X_batch, pwm_model, rc_model, return_dict, batch,
     if keep_all_active:
         # get all segments that pass threshold (default is 1e-6)
         active_idx = out > thr
+        if thr < 0:  # use adaptive filter-specific threshold (filter_max_value / 2)
+            thrs = torch.load("out/max_output_values.pt").max(axis = 0).values.numpy() / 2
+            for f in range(out.shape[1]):  
+                active_idx[:, f, :, :] = out[:, f, :, :] > thrs[f]
         print("Proportion of non-zeros:", (active_idx * 1.0).mean().item())
         
         for f in range(out.shape[1]):  # for each filter
@@ -230,6 +282,10 @@ def get_pfm_batch_parallel(X_batch, pwm_model, rc_model, return_dict, batch,
         # get samples that have at least one position that passes threshold
         out_max_value, out_max_pos = out[:, :, 0, :].max(axis = 2)
         active_idx = out_max_value > thr
+        if thr < 0:  # use adaptive filter-specific threshold (filter_max_value / 2)
+            thrs = torch.load("out/max_output_values.pt").max(axis = 0).values.numpy() / 2
+            for f in range(out.shape[1]):  
+                active_idx[:, f] = out_max_value[:, f] > thrs[f]
         out_max_pos[~active_idx] = -1
         print("Proportion of active sequences:", (active_idx * 1.0).mean().item())
         for f in range(out.shape[1]):  # for each filter
@@ -251,32 +307,79 @@ if __name__ == '__main__':
     import argparse
     
     parser = argparse.ArgumentParser()
+    
     parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = 'out/')
     parser.add_argument('--out_tag', dest = 'out_tag', required = False, default = 'all_active_per_seq')
     parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = 'data/deepsea_train/')
+    
     parser.add_argument('--batch_size', dest = 'batch_size', required = False, default = 500, type = int)
     parser.add_argument('--thr', dest = 'thr', required = False, default = 1e-6, type = float)
     parser.add_argument('--keep_all_active', dest = 'keep_all_active', action = "store_true")
     parser.add_argument('--direct', dest = 'direct', action = "store_true")
+    
     parser.add_argument('--parallel', dest = 'parallel', action = "store_true")
     parser.add_argument('--n_cores', dest = 'n_cores', required = False, default = 3, type = int)
-    args = parser.parse_args()
     
-    print("Arguments:")
-    print(args)
+    parser.add_argument('--include_y', dest = 'include_y', required = False, default = None)
+    parser.add_argument('--observed_y', dest = 'observed_y', required = False, default = 1, type = int)
+    parser.add_argument('--quantile_y', dest = 'quantile_y', required = False, default = .9, type = float)
+    
+    args = parser.parse_args()    
     
     test_mat = scipy.io.loadmat(args.data_dir + 'test.mat')
-    Y_test = torch.FloatTensor(test_mat['testdata'])
     X_test = torch.FloatTensor(test_mat['testxdata'])
     X_test = torch.reshape(X_test, (455024, 4, 1, 1000))
-    
-    pwms, pfms = get_pwm(X_test, 
-                         batch_size = args.batch_size, 
-                         thr = args.thr, 
-                         keep_all_active = args.keep_all_active,
-                         direct = args.direct, 
-                         parallel = args.parallel,
-                         n_cores = args.n_cores)
+        
+    # reorder to A, C, G, T format
+    x = X_test[:, 1:2, :, :].clone()
+    y = X_test[:, 2:3, :, :].clone()
+    X_test[:, 1:2, :, :] = y
+    X_test[:, 2:3, :, :] = x
+        
+    if args.include_y is None:  # perform analysis with no knowledge of y or yhat
+        print("Arguments:")
+        print(args)
+        pwms, pfms = get_pwm(X_test,
+                             batch_size = args.batch_size, 
+                             thr = args.thr, 
+                             keep_all_active = args.keep_all_active,
+                             direct = args.direct, 
+                             parallel = args.parallel,
+                             n_cores = args.n_cores)
+    else:  # perform analysis with respect to particular columns in y or yhat
+        ynames = pd.read_csv(args.data_dir + 'predictor.names', header = None)
+        y_keep_idx = np.where(ynames.iloc[:, 0].str.contains("CTCF|PTBP1|SOX10|TP53|POU2F2|HNRNPA1|PRDM1|EBF1|NR4A2|ZC3H10").values)[0]
+        if args.include_y == 'observed':  # look only at y == 1 sequences
+            Y_test = torch.FloatTensor(test_mat['testdata'])
+            keep_idx = Y_test == args.observed_y
+            args.out_tag = args.out_tag + '_yobserved_' + str(args.observed_y)
+        elif args.include_y == 'predicted':  # look only at yhat "high" sequences
+            Y_test = torch.load(args.out_dir + 'ypred_test.pt')
+            keep_idx = torch.BoolTensor(Y_test.shape)
+            for i in range(Y_test.shape[1]):
+                keep_idx[:, i] = Y_test[:, i] > np.quantile(Y_test[:, i].detach().numpy(),
+                                                            args.quantile_y)
+            args.out_tag = args.out_tag + '_ypredicted_' + str(args.quantile_y)
+
+        print("Arguments:")
+        print(args)
+        
+        pwms = torch.zeros(Y_test.shape[1], 320, 4, 8)
+        pfms = torch.zeros(Y_test.shape[1], 320, 4, 8)
+        for i in y_keep_idx:
+            if keep_idx[:, i].sum() < 100:
+                continue
+            print(str(i) + ": " + ynames.iloc[i, 0])
+            pwms[i, :], pfms[i, :] = get_pwm(X_test[keep_idx[:, i], :], 
+                                             batch_size = args.batch_size, 
+                                             thr = args.thr, 
+                                             keep_all_active = args.keep_all_active,
+                                             direct = args.direct, 
+                                             parallel = args.parallel,
+                                             n_cores = args.n_cores)
+            torch.save(pwms, args.out_dir + "PWMs_" + args.out_tag + '.pt')
+            torch.save(pfms, args.out_dir + "PFMs_" + args.out_tag + '.pt')
+            
     torch.save(pwms, args.out_dir + "PWMs_" + args.out_tag + '.pt')
     torch.save(pfms, args.out_dir + "PFMs_" + args.out_tag + '.pt')
 
