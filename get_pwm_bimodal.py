@@ -176,6 +176,7 @@ def get_pfm_batch_bimodal_parallel(X_batch, f, pwm_model, rc_model, return_dict,
 if __name__ == '__main__':
     import scipy.io
     import argparse
+    import pickle
     
     parser = argparse.ArgumentParser()
     
@@ -193,7 +194,8 @@ if __name__ == '__main__':
     parser.add_argument('--parallel', dest = 'parallel', action = "store_true")
     parser.add_argument('--n_cores', dest = 'n_cores', required = False, default = 3, type = int)
     
-    args = parser.parse_args()    
+    args = parser.parse_args()
+    batch_size = args.batch_size
     
     print("Loading data...")
     test_mat = scipy.io.loadmat(args.data_dir + 'test.mat')
@@ -210,11 +212,10 @@ if __name__ == '__main__':
     if eval_all:
         print("Getting activations for each sequence and filter from layer 1...")
         pwm_model, _ = get_pwm_model()
-        n_batch = math.ceil(X_test.shape[0] / args.batch_size)
         n_filters = 320
-        act_vals_ls = [[] for i in range(n_filters)]
         zero_vals = torch.zeros(n_filters)
         for batch in tqdm(range(300)):  # look only at a subset of 300*batch_size
+            act_vals_ls = {}
             start_idx = batch * batch_size
             end_idx = min((batch + 1) * batch_size, X_test.shape[0])
             act_vals = pwm_model(X_test[start_idx:end_idx, :])[:, :, 0, :]
@@ -222,7 +223,11 @@ if __name__ == '__main__':
             for f in range(n_filters):
                 vals = act_vals[:, f, :].flatten()
                 vals = vals[vals != 1e-6]
-                act_vals_ls[f].append(vals)
+                act_vals_ls[f] = vals
+            open_file = open("out/" + "active_values_" + str(batch) + ".obj", 'wb')
+            pickle.dump(act_vals_ls, open_file)
+            open_file.close()
+            
         zero_vals = zero_vals / (end_idx * 993 * 2)
         torch.save(zero_vals, args.out_dir + "nonactive_freq.pt")
     
