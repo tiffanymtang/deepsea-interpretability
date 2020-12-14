@@ -1,1 +1,7 @@
 .ipynb_checkpoints/
+old_nbs/*
+out_files/*
+old_pwms/*
+old_out_files/*
+__pycache__/*
+data/*
