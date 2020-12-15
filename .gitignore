@@ -4,4 +4,11 @@ out_files/*
 old_pwms/*
 old_out_files/*
 __pycache__/*
+__pycache__/
 data/*
+out/*
+meme_out/*
+notebooks/TF-MoDISco/DeepBind/02_CTCFL_K562_modisco.ipynb
+notebooks/01_pwm_eda_ZV.ipynb
+tomtom_scripts/jaspar_metadata.py
+tomtom_scripts/results/*
