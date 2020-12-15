@@ -18,8 +18,8 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = 'out/')
-    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = 'data/deepsea_train/')
+    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = '../out/')
+    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = '../data/deepsea_train/')
     parser.add_argument('--batch_size', dest = 'batch_size', required = False, default = 500, type = int)
     
     args = parser.parse_args()    

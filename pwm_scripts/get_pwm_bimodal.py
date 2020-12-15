@@ -78,7 +78,7 @@ def get_pwm_bimodal(X, batch_size = 500, f = 2, thr0 = 1e-6, thr1 = 0.3,
         keys = list(chain.from_iterable(keys))
         if len(keys) != n_batch:
             print("Possible missing batches. Saving keys to file...")
-            with open('out/keys.txt', 'w') as filehandle:
+            with open('../out/keys.txt', 'w') as filehandle:
                 for key in keys:
                     filehandle.write('%s\n' % key)
     else:
@@ -180,9 +180,9 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = 'out/')
+    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = '../out/')
     parser.add_argument('--out_tag', dest = 'out_tag', required = False, default = 'all_active_per_seq_bimodal')
-    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = 'data/deepsea_train/')
+    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = '../data/deepsea_train/')
     
     parser.add_argument('--eval_all', dest = 'eval_all', action = "store_true")
     parser.add_argument('--batch_size', dest = 'batch_size', required = False, default = 500, type = int)
@@ -230,14 +230,6 @@ if __name__ == '__main__':
             
         zero_vals = zero_vals / (end_idx * 993 * 2)
         torch.save(zero_vals, args.out_dir + "nonactive_freq.pt")
-    
-#     # visualizing distribution of first 12 filters
-#     import matplotlib.pyplot as plt
-#     fig, axs = plt.subplots(4, 3)
-#     for i in range(4):
-#         for j in range(3):
-#             tmp = torch.cat(act_vals_ls[i*4 + j])
-#             axs[i, j].hist(tmp, density = 1)
     
     # look at pwms from lower and upper activations using some threshold
     pwms0, pwms1, pfms0, pfms1 = get_pwm_bimodal(X_test, 

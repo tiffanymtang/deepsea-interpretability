@@ -308,9 +308,9 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
     
-    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = 'out/')
+    parser.add_argument('--out_dir', dest = 'out_dir', required = False, default = '../out/')
     parser.add_argument('--out_tag', dest = 'out_tag', required = False, default = 'all_active_per_seq')
-    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = 'data/deepsea_train/')
+    parser.add_argument('--data_dir', dest = 'data_dir', required = False, default = '../data/deepsea_train/')
     
     parser.add_argument('--batch_size', dest = 'batch_size', required = False, default = 500, type = int)
     parser.add_argument('--thr', dest = 'thr', required = False, default = 1e-6, type = float)
